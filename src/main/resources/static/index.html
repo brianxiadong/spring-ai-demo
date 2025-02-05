@@ -178,7 +178,7 @@
 
             try {
                 // 调用流式API
-                const response = await fetch(`/ai/generateStream?message=${encodeURIComponent(message)}`);
+                const response = await fetch(`/chapter02/ai/generateStream?message=${encodeURIComponent(message)}`);
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
 
