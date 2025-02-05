@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat Assistant</title>
+    <style>
+        /* 全局样式 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f7f7f8;
+        }
+
+        /* 聊天容器 */
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 消息区域 */
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 20px;
+        }
+
+        /* 消息样式 */
+        .message {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .user-message {
+            background-color: #fff;
+            margin-left: 20%;
+        }
+
+        .assistant-message {
+            background-color: #f0f0f0;
+            margin-right: 20%;
+        }
+
+        /* 输入区域 */
+        .input-container {
+            position: relative;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        #message-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: none;
+            height: 50px;
+            font-size: 16px;
+        }
+
+        #send-button {
+            position: absolute;
+            right: 30px;
+            bottom: 30px;
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #send-button:hover {
+            background-color: #0056b3;
+        }
+
+        #send-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        /* 打字动画 */
+        .typing {
+            display: inline-block;
+            margin-left: 4px;
+        }
+
+        .typing span {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background-color: #666;
+            border-radius: 50%;
+            margin: 0 2px;
+            animation: typing 1s infinite;
+        }
+
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="messages-container" id="messages">
+            <!-- 消息将在这里动态添加 -->
+        </div>
+        <div class="input-container">
+            <textarea 
+                id="message-input" 
+                placeholder="输入您的问题..."
+                rows="1"
+                onkeydown="if(event.keyCode === 13 && !event.shiftKey) { event.preventDefault(); sendMessage(); }">
+            </textarea>
+            <button id="send-button" onclick="sendMessage()">发送</button>
+        </div>
+    </div>
+
+    <script>
+        // DOM 元素
+        const messagesContainer = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+
+        // 工具函数：创建消息元素
+        function createMessageElement(content, isUser) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
+            messageDiv.textContent = content;
+            return messageDiv;
+        }
+
+        // 创建打字动画元素
+        function createTypingIndicator() {
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message assistant-message';
+            typingDiv.innerHTML = '正在思考中<div class="typing"><span></span><span></span><span></span></div>';
+            return typingDiv;
+        }
+
+        // 发送消息
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            // 禁用输入和发送按钮
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+
+            // 显示用户消息
+            messagesContainer.appendChild(createMessageElement(message, true));
+            messageInput.value = '';
+
+            // 显示打字动画
+            const typingIndicator = createTypingIndicator();
+            messagesContainer.appendChild(typingIndicator);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            try {
+                // 调用流式API
+                const response = await fetch(`/ai/generateStream?message=${encodeURIComponent(message)}`);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                // 创建新的助手消息容器
+                const assistantMessage = document.createElement('div');
+                assistantMessage.className = 'message assistant-message';
+                
+                // 移除打字动画
+                typingIndicator.remove();
+                
+                // 添加新的消息容器
+                messagesContainer.appendChild(assistantMessage);
+
+                // 读取流式响应
+                let buffer = ''; // 用于存储未完成的JSON字符串
+                while (true) {
+                    const {done, value} = await reader.read();
+                    if (done) break;
+
+                    // 解码响应数据
+                    const chunk = decoder.decode(value);
+                    
+                    // 去掉数组的开始和结束标志
+                    let processedChunk = chunk.replace(/^\[/, '').replace(/\]$/, '');
+                    // 如果chunk中间有数组标志，也去掉
+                    processedChunk = processedChunk.replace(/\],\[/g, ',');
+                    
+                    buffer += processedChunk;
+                    
+                    // 查找完整的JSON对象
+                    while (true) {
+                        // 查找第一个完整的JSON对象
+                        const startIndex = buffer.indexOf('{"result"');
+                        if (startIndex === -1) break;
+                        
+                        // 从开始位置查找匹配的结束括号
+                        let bracketCount = 0;
+                        let endIndex = -1;
+                        
+                        for (let i = startIndex; i < buffer.length; i++) {
+                            if (buffer[i] === '{') bracketCount++;
+                            if (buffer[i] === '}') bracketCount--;
+                            
+                            if (bracketCount === 0) {
+                                endIndex = i;
+                                break;
+                            }
+                        }
+                        
+                        // 如果没有找到匹配的结束括号，说明JSON对象不完整
+                        if (endIndex === -1) break;
+                        
+                        // 提取完整的JSON对象
+                        const jsonStr = buffer.substring(startIndex, endIndex + 1);
+                        // 更新buffer，移除已处理的部分（包括可能的逗号）
+                        buffer = buffer.substring(endIndex + 1).replace(/^,/, '');
+                        
+                        try {
+                            const jsonData = JSON.parse(jsonStr);
+                            if (jsonData.result?.output?.text) {
+                                // 将文本分成字符数组，逐个显示
+                                const text = jsonData.result.output.text;
+                                for (let i = 0; i < text.length; i++) {
+                                    await new Promise(resolve => setTimeout(resolve, 50)); // 每个字符间隔50ms
+                                    assistantMessage.textContent += text[i];
+                                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                }
+                            }
+                        } catch (e) {
+                            console.error('解析JSON数据失败:', e, jsonStr);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('请求失败:', error);
+                const errorMessage = document.createElement('div');
+                errorMessage.className = 'message assistant-message';
+                errorMessage.textContent = '抱歉，发生了一些错误，请稍后重试。';
+                messagesContainer.appendChild(errorMessage);
+            } finally {
+                // 重新启用输入和发送按钮
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                messageInput.focus();
+            }
+        }
+
+        // 页面加载完成后聚焦输入框
+        window.onload = () => {
+            messageInput.focus();
+        };
+    </script>
+</body>
+</html> 
